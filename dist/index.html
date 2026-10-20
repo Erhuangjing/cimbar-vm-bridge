@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cimbar 虚拟机传文件</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 24px 16px;
+      background: #f4f6fa;
+      color: #1d2633;
+      font: 15px/1.7 "Microsoft YaHei", "PingFang SC", sans-serif;
+    }
+
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 1.6em;
+      margin: 0 0 .2em;
+    }
+
+    .sub {
+      color: #5b6878;
+      margin: 0 0 1.4em;
+    }
+
+    a.card {
+      display: block;
+      padding: 18px 20px;
+      margin-bottom: 14px;
+      border-radius: 10px;
+      background: #fff;
+      border: 1px solid #d8dee8;
+      color: inherit;
+      text-decoration: none;
+    }
+
+    a.card:hover {
+      border-color: #2563eb;
+    }
+
+    a.card b {
+      font-size: 1.2em;
+      color: #2563eb;
+    }
+
+    a.card span {
+      display: block;
+      color: #5b6878;
+    }
+
+    code {
+      background: #e8ecf3;
+      padding: 0 4px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <h1>Cimbar 虚拟机传文件</h1>
+    <p class="sub">Win7 虚拟机网页发送 → Win11 宿主机网页屏幕捕获接收，全程离线、无需 OBS。</p>
+    <a class="card" href="cimbar-send.html">
+      <b>📤 发送端（在 Win7 虚拟机里打开）</b>
+      <span>选择文件后会在页面上播放动态彩色条码。支持 Chrome 109 / Firefox ESR 115。</span>
+    </a>
+    <a class="card" href="cimbar-recv.html">
+      <b>📥 接收端（在 Win11 宿主机上打开）</b>
+      <span>点击「捕获屏幕 / 窗口」选中虚拟机窗口即可接收。请用 <code>http://localhost</code> 或直接双击本地文件打开。</span>
+    </a>
+    <p>提示：在虚拟机里打开发送端后，可按 <code>Ctrl+S</code> 把它保存到虚拟机本地，以后离线双击即可使用。</p>
+  </main>
+</body>
+
+</html>

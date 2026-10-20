@@ -1,0 +1,3 @@
+node_modules/
+test/recv-screenshot.png
+__pycache__/

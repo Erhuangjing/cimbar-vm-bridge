@@ -1,0 +1,193 @@
+let _wasmInitialized = false;
+let _buffs = {};
+
+// only if no VideoFrame support...
+let _offscreen = undefined;
+let _offscreenCtx = undefined;
+
+// 主线程会把已编译好的 WebAssembly.Module 发过来，避免每个 worker 重复下载/编译
+var _wasmModuleResolve;
+var _wasmModulePromise = new Promise(function (resolve) {
+  _wasmModuleResolve = resolve;
+});
+
+var Module = {
+  preRun: [],
+  instantiateWasm: function (imports, successCallback) {
+    _wasmModulePromise.then(function (mod) {
+      return WebAssembly.instantiate(mod, imports).then(function (inst) {
+        successCallback(inst, mod);
+      });
+    }).catch(function (e) {
+      self.postMessage({ type: 'startWasm', error: String(e) });
+    });
+    return {};
+  },
+  onRuntimeInitialized: function load_done_callback() {
+    console.info("The Module is loaded and is accessible here", Module);
+    _wasmInitialized = true;
+    self.postMessage({ type: 'startWasm', ready: "ready!" });
+  }
+};
+
+var RecvWorker = function () {
+
+  // public interface
+  return {
+    on_frame: function (data) {
+      const pixels = data.pixels;
+      const format = data.format;
+      const width = data.width;
+      const height = data.height;
+      const mode = data.mode;
+      if (mode) {
+        Module._cimbard_configure_decode(mode);
+      }
+
+      try {
+        //console.log(vf);
+        // malloc iff necessary
+        RecvWorker.mallocAll(pixels.length);
+        const imgBuff = RecvWorker.imgBuff();
+        imgBuff.set(pixels, 0); // copy
+      } catch (e) {
+        console.log(e);
+      }
+
+      var type = 4;
+      if (format == "NV12") {
+        type = 12;
+      }
+      else if (format == "I420") {
+        type = 420;
+      }
+
+      // then decode in wasm, fool
+      const fountainBuff = RecvWorker.fountainBuff();
+      var len = Module._cimbard_scan_extract_decode(RecvWorker.imgBuff().byteOffset, width, height, type, fountainBuff.byteOffset, fountainBuff.length);
+      if (len <= 0) {
+        var errmsg = RecvWorker.get_error();
+        errmsg = len + " " + errmsg;
+        let msg = { res: errmsg };
+        if (len == 0)
+          msg.nodata = true;
+        else if (len == -3)
+          msg.failed_extract = true;
+        else
+          msg.error = true;
+        self.postMessage(msg);
+      }
+      else { //if (len > 0) {
+        console.log('len is ' + len);
+        const msgbuf = new Uint8Array(Module.HEAPU8.buffer, fountainBuff.byteOffset, len).slice();
+        //console.log(msgbuf);
+        self.postMessage({ mode: mode, buff: msgbuf }, [msgbuf.buffer]);
+      }
+      // in main, const receivedArray = event.data.buff;
+    },
+
+    convert_bitmap: function (data) {
+      const bitmap = data.bitmap;
+      const width = data.width;
+      const height = data.height;
+
+      try {
+        if (!_offscreen) {
+          _offscreen = new OffscreenCanvas(width, height);
+          _offscreenCtx = _offscreen.getContext('2d', { willReadFrequently: true });
+        }
+        else if (_offscreen.width !== width || _offscreen.height !== height) {
+          _offscreen.width = width;
+          _offscreen.height = height;
+        }
+        _offscreenCtx.drawImage(bitmap, 0, 0);
+        const imageData = _offscreenCtx.getImageData(0, 0, width, height);
+
+        //console.log("got image data");
+        //console.log(imageData);
+        data.pixels = imageData.data;
+        delete data.bitmap;
+        return data;
+      } finally {
+        bitmap.close();
+      }
+    },
+
+    get_error: function () {
+      const errbuff = RecvWorker.mallocPlease("error", 256);
+      const errlen = Module._cimbard_get_report(errbuff.byteOffset, errbuff.length);
+      if (errlen > 0) {
+        const errview = new Uint8Array(Module.HEAPU8.buffer, errbuff.byteOffset, errlen);
+        const decoder = new TextDecoder();
+        return decoder.decode(errview);
+      }
+      return "";
+    },
+
+    mallocPlease: function (name, size) {
+      if (_buffs[name] === undefined || size > _buffs[name].length) {
+        try {
+          if (size > _buffs[name].length) {
+            console.log("resizing " + name + " buff from " + _buffs[name].length + " to " + size);
+            Module._free(_buffs[name].byteOffset);
+          }
+        } catch (e) { } // if we're leaking memory we'll find out the hard way 
+        const dataPtr = Module._malloc(size);
+        _buffs[name] = new Uint8Array(Module.HEAPU8.buffer, dataPtr, size);
+      }
+      return _buffs[name];
+    },
+
+    mallocAll: function (imgsize) {
+      RecvWorker.mallocPlease("img", imgsize);
+
+      const bufsize = Module._cimbard_get_bufsize();
+      RecvWorker.mallocPlease("fountain", bufsize);
+    },
+
+    imgBuff: function () {
+      let buff = _buffs['img'];
+      if (buff.buffer !== Module.HEAPU8.buffer) {
+        _buffs['img'] = new Uint8Array(Module.HEAPU8.buffer, buff.byteOffset, buff.byteLength);
+        buff = _buffs['img'];
+      }
+      return buff;
+    },
+
+    fountainBuff: function () {
+      let buff = _buffs['fountain'];
+      if (buff.buffer !== Module.HEAPU8.buffer) {
+        _buffs['fountain'] = new Uint8Array(Module.HEAPU8.buffer, buff.byteOffset, buff.byteLength);
+        buff = _buffs['fountain'];
+      }
+      return buff;
+    }
+  };
+}();
+
+importScripts('cimbar_js.js');
+
+self.onmessage = async (event) => {
+
+  if (event.data && event.data.type == 'wasmModule') {
+    _wasmModuleResolve(event.data.module);
+    return;
+  }
+
+  if (!_wasmInitialized) {
+    console.log('we got no wasm :(');
+    self.postMessage({ error: "no wasm" });
+    return;
+  }
+
+  try {
+    let data = event.data;
+    if (!data.pixels && data.bitmap) {
+      data = RecvWorker.convert_bitmap(data);
+    }
+    RecvWorker.on_frame(data);
+  } catch (ex) {
+    console.log("unexpected error: " + ex);
+    self.postMessage({ error: true, res: ex });
+  }
+};

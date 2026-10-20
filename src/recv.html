@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="zh-CN" data-framework="javascript">
+
+<head>
+  <title>Cimbar 接收端（屏幕捕获版）</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, user-scalable=no">
+</head>
+
+<body>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      height: 100vh;
+    }
+
+    body {
+      background-color: white;
+      background-image: linear-gradient(135deg, rgb(0, 0, 0) 65px, transparent 130px),
+        repeating-linear-gradient(135deg, rgb(0, 0, 0) 0px, rgb(153, 197, 206) 1px, transparent 1px, transparent 30px),
+        repeating-linear-gradient(45deg, rgb(0, 0, 0) 0px, rgb(153, 197, 206) 1px, transparent 1px, transparent 30px);
+      background-size: cover;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      body {
+        background-color: black;
+        color: white;
+      }
+    }
+
+    #container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: -100;
+      overflow: hidden;
+      /* Hide scrollbars */
+    }
+
+    video {
+      height: 100%;
+      width: 100%;
+      object-fit: contain;
+      z-index: -100;
+      background-size: cover;
+      transition: 1s opacity;
+    }
+
+    .statusbox {
+      color: white;
+      text-shadow: 1px 1px 1px green;
+    }
+
+    #progress_bars {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      margin-bottom: 1vh;
+    }
+
+    .progress {
+      display: block;
+      height: 1.2vh;
+      margin-bottom: 1vh;
+      background-color: white;
+      border-top: 0.2vh inset navy;
+      border-bottom: 0.4vh inset navy;
+      border-right: 0.3vh inset navy;
+      border-radius: 0 0.5vh 0.5vh 0;
+      max-width: 100%;
+      width: 0;
+    }
+
+    .crosshairs {
+      border-color: white !important;
+    }
+
+    .crosshairs.scanning_xhairs {
+      border-color: #FFFF00 !important;
+    }
+
+    .crosshairs.active_xhairs {
+      border-color: #00FF00 !important;
+    }
+
+    #crosshair1 {
+      position: fixed;
+      top: 15%;
+      right: 20%;
+      width: 5%;
+      height: 5%;
+      z-index: -50;
+      border-right: 5px groove;
+      border-top: 5px groove;
+      box-shadow: inset 0 0 0 4px #555,
+    }
+
+    #crosshair2 {
+      position: fixed;
+      bottom: 20%;
+      left: 15%;
+      width: 5%;
+      height: 5%;
+      z-index: -50;
+      border-left: 5px groove;
+      border-bottom: 5px groove;
+      box-shadow: inset 0 0 0 4px #555,
+    }
+
+    #nav-container:focus-within {
+      z-index: 1;
+    }
+
+    #nav-content,
+    #nav-container .bg,
+    #nav-container:focus-within #nav-button {
+      z-index: 1;
+    }
+
+    /* options */
+    #nav-container a.mode-auto,
+    #nav-container a.mode-b {
+      color: #555;
+    }
+
+    #nav-container.mode-auto a.mode-auto,
+    #nav-container.mode-b a.mode-b {
+      color: #9fa6b2;
+    }
+
+    /* nav stuff */
+    /* built off of https://codepen.io/dannievinther/pen/NvZjvz */
+    #nav-container {
+      position: fixed;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    #nav-container .bg {
+      pointer-events: auto;
+      position: absolute;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      visibility: hidden;
+      opacity: 0;
+      transition: .3s;
+      background: black;
+    }
+
+    #nav-container:focus-within .bg {
+      visibility: visible;
+      opacity: .6;
+    }
+
+    #nav-container * {
+      visibility: visible;
+    }
+
+    #nav-button {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      height: 60px;
+      width: 30px;
+      margin-left: 15px;
+      cursor: pointer;
+      pointer-events: auto;
+      touch-action: manipulation;
+      border: 0;
+      outline: 0;
+      background-image: linear-gradient(180deg, rgb(0, 0, 0, 0) 10%, rgb(0, 0, 0) 40%, rgb(0, 0, 0) 60%, rgb(0, 0, 0, 0) 90%);
+      background-color: initial;
+    }
+
+    #nav-button.hide {
+      opacity: 0;
+      transition: .3s;
+    }
+
+    #nav-container:focus-within #nav-button.hide {
+      opacity: 1;
+    }
+
+    .icon-bar {
+      display: block;
+      width: 100%;
+      height: 3px;
+      transition: .3s;
+    }
+
+    .icon-bar+.icon-bar {
+      margin-top: 3px;
+    }
+
+    #nav-container .icon-bar:nth-of-type(1) {
+      background-color: #00ff00;
+      box-shadow: 0px 0px 5px #00ff00, 0px 0px 2px #00ff00;
+    }
+
+    #nav-container .icon-bar:nth-of-type(2) {
+      background-color: #ffff00;
+      box-shadow: 0px 0px 5px #ffff00, 0px 0px 2px #ffff00;
+    }
+
+    #nav-container .icon-bar:nth-of-type(3) {
+      background-color: #00ffff;
+      box-shadow: 0px 0px 5px #00ffff, 0px 0px 2px #00ffff;
+    }
+
+    #nav-container .icon-bar:nth-of-type(4) {
+      background-color: #ff00ff;
+      box-shadow: 0px 0px 5px #ff00ff, 0px 0px 2px #ff00ff;
+    }
+
+    #nav-container.mode-4c .icon-bar:nth-of-type(1) {
+      background-color: #00ffff;
+      box-shadow: 0px 0px 5px #00ffff, 0px 0px 2px #00ffff;
+    }
+
+    #nav-container.mode-4c .icon-bar:nth-of-type(2) {
+      background-color: #ffff00;
+      box-shadow: 0px 0px 5px #ffff00, 0px 0px 2px #ffff00;
+    }
+
+    #nav-container.mode-4c .icon-bar:nth-of-type(3) {
+      background-color: #00ff00;
+      box-shadow: 0px 0px 5px #00ff00, 0px 0px 2px #00ff00;
+    }
+
+    #nav-container.mode-4c .icon-bar:nth-of-type(4) {
+      background-color: #ff00ff;
+      box-shadow: 0px 0px 5px #ff00ff, 0px 0px 2px #ff00ff;
+    }
+
+    #nav-container:focus-within #nav-button {
+      pointer-events: none;
+    }
+
+    #nav-container:focus-within .icon-bar {
+      background-color: #aaa;
+      background-image: none !important;
+      box-shadow: none !important;
+    }
+
+    #nav-button.attention:focus-within .icon-bar {
+      background-color: #00ffff;
+    }
+
+    #nav-container:focus-within .icon-bar:nth-of-type(1) {
+      transform: translate3d(0, 9px, 0) rotate(45deg);
+    }
+
+    #nav-container:focus-within .icon-bar:nth-of-type(2),
+    #nav-container:focus-within .icon-bar:nth-of-type(3) {
+      opacity: 0;
+    }
+
+    #nav-container:focus-within .icon-bar:nth-of-type(4) {
+      transform: translate3d(0, -9px, 0) rotate(-45deg);
+    }
+
+    #nav-content {
+      margin-top: 60px;
+      padding: 20px;
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: calc(100% - 60px);
+      overflow-x: clip;
+      background-color: #282C34;
+      text-align: center;
+      pointer-events: auto;
+      -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+      transform: translateX(-100%);
+      transition: transform .3s;
+    }
+
+    #nav-content ul {
+      height: calc(100% - 60px);
+      display: flex;
+      flex-direction: column;
+      list-style: none;
+    }
+
+    #nav-content hr {
+      border: 1px solid #444;
+    }
+
+    #nav-content li a {
+      display: block;
+      padding: 10px 5px;
+      color: #9fa6b2;
+      text-decoration: none;
+      transition: color .1s;
+    }
+
+    #nav-content li a.attention {
+      animation: glowing 1.5s infinite alternate;
+    }
+
+    #nav-content li a {
+      font-variant: small-caps;
+      font-size: 2em;
+    }
+
+    #nav-content h4 {
+      color: gray;
+      font-variant: small-caps;
+      padding-top: 1em;
+    }
+
+    #nav-content li.modesel a {
+      display: inline-block;
+      width: 4em;
+    }
+
+    #nav-content li:hover {
+      background-color: #2c323c;
+    }
+
+    #nav-content li:not(.small)+.small {
+      margin-top: auto;
+    }
+
+    #nav-content li.small {
+      display: flex;
+      align-self: center;
+    }
+
+    #nav-content li.small a {
+      font-size: 1em;
+    }
+
+    #nav-container:focus-within #nav-content,
+    #debug_menu:focus-within {
+      transform: none;
+    }
+
+    #debug_menu {
+      transform: translateX(100%);
+      margin-top: 60px;
+      right: 0;
+      padding: 20px;
+      position: absolute;
+      top: 0;
+      max-width: 95%;
+      z-index: 2;
+      transition: transform .3s;
+      opacity: 95%;
+      background-color: black;
+    }
+
+    .invisible,
+    .hidden {
+      display: none !important;
+    }
+
+    body {
+      font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    }
+
+    #nav-content li a,
+    #nav-content h4 {
+      font-variant: normal;
+    }
+
+    #nav-content li a {
+      font-size: 1.4em;
+    }
+
+    #nav-content li.modesel a {
+      width: 3em;
+    }
+
+    /* 屏幕捕获时不需要摄像头对准框 */
+    body:not(.source-camera) .crosshairs {
+      display: none;
+    }
+
+    body.running {
+      background: #111;
+    }
+
+    /* 输入源选择面板 */
+    #picker {
+      position: fixed;
+      inset: 0;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(10, 14, 22, 0.82);
+      overflow-y: auto;
+    }
+
+    #picker .card {
+      width: 100%;
+      max-width: 680px;
+      background: #1d232e;
+      color: #e8edf4;
+      border-radius: 14px;
+      padding: 28px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, .5);
+      line-height: 1.7;
+    }
+
+    #picker h1 {
+      font-size: 1.6em;
+      margin-bottom: .2em;
+    }
+
+    #picker .sub {
+      color: #9fb0c6;
+      margin-bottom: 1.2em;
+    }
+
+    #picker .buttons {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    #picker button.src {
+      flex: 1 1 220px;
+      padding: 18px 14px;
+      font: inherit;
+      font-size: 1.15em;
+      border-radius: 10px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      color: #fff;
+      text-align: center;
+    }
+
+    #picker button.src small {
+      display: block;
+      font-size: .72em;
+      opacity: .85;
+      margin-top: 4px;
+    }
+
+    #btn-screen {
+      background: #2563eb;
+    }
+
+    #btn-camera {
+      background: #3b4556;
+    }
+
+    #picker button.src:hover:not(:disabled) {
+      border-color: #9cc3ff;
+    }
+
+    #picker button.src:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+
+    #picker .msg {
+      margin-top: 1em;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: #233249;
+    }
+
+    #picker .msg.error,
+    #env-warnings {
+      background: #3a1d1d;
+      color: #ffd5d5;
+      border: 1px solid #a33;
+    }
+
+    #env-warnings {
+      margin-bottom: 1em;
+      padding: 10px 14px;
+      border-radius: 8px;
+    }
+
+    #picker code {
+      background: rgba(255, 255, 255, .1);
+      padding: 0 4px;
+      border-radius: 3px;
+      word-break: break-all;
+    }
+
+    #picker details {
+      margin-top: 1.2em;
+      color: #c4cfdd;
+      font-size: .92em;
+    }
+
+    #picker summary {
+      cursor: pointer;
+      color: #9cc3ff;
+    }
+
+    #picker ol {
+      padding-left: 1.4em;
+      margin-top: .5em;
+    }
+
+    #loading-status {
+      margin-top: 1em;
+      color: #9fb0c6;
+      font-size: .92em;
+    }
+
+    /* 运行状态 */
+    #status-pill {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      z-index: 3;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, .7);
+      color: #ddd;
+      font-size: 14px;
+    }
+
+    body:not(.running) #status-pill {
+      display: none;
+    }
+
+    #status-pill::before {
+      content: "●";
+      margin-right: 6px;
+      color: #888;
+    }
+
+    #status-pill.scanning::before {
+      color: #ffd400;
+    }
+
+    #status-pill.active::before {
+      color: #2ee66b;
+    }
+
+    #status-progress {
+      margin-left: 8px;
+      font-weight: bold;
+      color: #2ee66b;
+    }
+
+    #received {
+      position: fixed;
+      left: 12px;
+      bottom: 40px;
+      z-index: 3;
+      max-width: min(520px, calc(100% - 24px));
+      max-height: 40vh;
+      overflow-y: auto;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, .75);
+      color: #ddd;
+      font-size: 14px;
+    }
+
+    #received ul {
+      list-style: none;
+    }
+
+    #received a {
+      color: #7fd3ff;
+      word-break: break-all;
+    }
+
+    #toasts {
+      position: fixed;
+      left: 50%;
+      top: 60px;
+      transform: translateX(-50%);
+      z-index: 6;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: max-content;
+      max-width: calc(100% - 32px);
+    }
+
+    .toast {
+      padding: 10px 16px;
+      border-radius: 8px;
+      background: rgba(30, 40, 55, .95);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
+    }
+
+    .toast.ok {
+      background: rgba(20, 110, 55, .95);
+    }
+
+    .toast.error {
+      background: rgba(150, 30, 30, .95);
+    }
+
+    #fatal {
+      display: none;
+      position: fixed;
+      left: 5%;
+      right: 5%;
+      top: 10%;
+      z-index: 10;
+      padding: 1.5em;
+      background: #2b0f0f;
+      color: #ffdede;
+      border: 2px solid #ff6060;
+      border-radius: 8px;
+      line-height: 1.7;
+    }
+
+    #fatal.show {
+      display: block;
+    }
+
+    #fatal .fatal-ua {
+      margin-top: 1em;
+      color: #b99;
+      font-size: 12px;
+      word-break: break-all;
+    }
+
+    @keyframes glowing {
+      0% {
+        color: #00ffff;
+      }
+    }
+  </style>
+
+  <div id="container">
+    <video id="video" autoplay="true" playsinline="true" muted="true">
+    </video>
+  </div>
+
+  <div id="fatal"></div>
+
+  <div id="picker">
+    <div class="card">
+      <h1>Cimbar 接收端</h1>
+      <div class="sub">在 Win11 宿主机上捕获 Win7 虚拟机窗口里的动态条码，免装 OBS。</div>
+      <div id="env-warnings" class="hidden"></div>
+      <div class="buttons">
+        <button id="btn-screen" class="src" disabled onclick="Recv.start('screen')">
+          🖥️ 捕获屏幕 / 窗口
+          <small>推荐：直接选择虚拟机窗口</small>
+        </button>
+        <button id="btn-camera" class="src" disabled onclick="Recv.start('camera')">
+          📷 使用摄像头
+          <small>物理摄像头 / OBS 等虚拟摄像头</small>
+        </button>
+      </div>
+      <div id="picker-msg" class="msg hidden"></div>
+      <div id="loading-status">⏳ 正在加载解码核心…</div>
+      <details>
+        <summary>使用步骤与技巧</summary>
+        <ol>
+          <li>在 Win7 虚拟机里用浏览器打开 <code>cimbar-send.html</code>，选择要发送的文件，按 F11 全屏。</li>
+          <li>把虚拟机窗口尽量放大（条码越大越清晰），虚拟机显示缩放保持 100%。</li>
+          <li>在这里点「捕获屏幕 / 窗口」，在弹窗的「窗口」标签中选中虚拟机窗口，点「分享」。</li>
+          <li>右上角状态变绿并显示百分比即在接收；完成后文件会自动下载，左下角也会列出。</li>
+          <li>虚拟机窗口<b>不能最小化</b>；被其他窗口部分遮挡一般没关系（Chrome/Edge）。</li>
+          <li>识别不到时：发送端帧率调低到 10，或换用 B 模式；也可以选择「整个屏幕」再试。</li>
+        </ol>
+      </details>
+    </div>
+  </div>
+
+  <div id="status-pill" class="pill"><span id="status-text">等待画面</span><span id="status-progress"></span></div>
+  <div id="toasts"></div>
+  <div id="received" class="hidden">
+    <div>已接收的文件（点击可再次下载）：</div>
+    <ul id="received-list"></ul>
+  </div>
+
+  <div id="crosshair1" class="crosshairs"></div>
+  <div id="crosshair2" class="crosshairs"></div>
+
+  <div id="nav-container" class="mode-auto">
+    <div class="bg" onclick="Recv.blurNav();"></div>
+    <button id="nav-button" tabindex="0" onclick="Recv.clickNav();">
+      <span class="icon-bar"></span>
+      <span class="icon-bar"></span>
+      <span class="icon-bar"></span>
+      <span class="icon-bar"></span>
+    </button>
+    <div id="nav-content" tabindex="-1">
+      <ul>
+        <li class="modesel">
+          <h4>解码模式</h4>
+          <a class="mode-auto" href="javascript:void(0)" onclick="Recv.setMode('Auto')">自动</a>
+          <a class="mode-b" id="mode-val" href="javascript:void(0)" onclick="Recv.setMode(this.textContent)">B</a>
+        </li>
+        <hr>
+        <li>
+          <h4>选项</h4>
+          <a href="javascript:void(0)" onclick="Recv.show_source_picker()">切换输入源</a>
+          <a href="javascript:void(0)" onclick="Recv.toggleFullscreen()">全屏</a>
+        </li>
+        <li class="small"><a href="javascript:void(0)" onclick="Recv.showDebug()">调试信息</a></li>
+        <li class="small"><a href="https://github.com/sz3/libcimbar" target="_blank">基于 libcimbar</a></li>
+      </ul>
+    </div>
+    <div id="debug_menu">
+      <button id="debug-button" onclick="Recv.showDebug();"></button>
+      <div class="statusbox" id="errorbox"></div>
+      <div class="statusbox" id="t0">hi0</div>
+      <div class="statusbox" id="t1">hi1</div>
+      <div class="statusbox" id="t2">hi2</div>
+      <div class="statusbox" id="t3">hi3</div>
+      <div class="statusbox" id="framesInFlight"></div>
+      <div class="statusbox" id="tdec">%VERSION%</div>
+    </div>
+  </div>
+
+  <div id="progress_bars">
+    <div class="progress"></div>
+  </div>
+
+  <script src="env.js"></script>
+  <script src="recv.js"></script>
+  <script src="zstd.js"></script>
+
+  <script type="application/octet-stream" id="cimbar-wasm-b64" src="cimbar_js.wasm"></script>
+  <script type="text/plain" id="recv-worker-src" src="recv-worker.js"></script>
+
+  <script type="text/javascript">
+    (function () {
+      var problems = Recv.check_environment();
+      if (problems.length) {
+        var box = document.getElementById('env-warnings');
+        box.innerHTML = '⚠️ ' + problems.join('<br><br>⚠️ ');
+        box.classList.remove('hidden');
+      }
+    })();
+
+    var video = document.querySelector('#video');
+    var Module = {
+      instantiateWasm: CimbarEnv.instantiateWasm,
+      onRuntimeInitialized: function () {
+        Recv.on_wasm_ready();
+      }
+    };
+    if (typeof WebAssembly !== 'undefined') {
+      Recv.init(video, Math.max(2, Math.min(4, (navigator.hardwareConcurrency || 4) - 1)));
+    }
+    Recv.update_source_buttons();
+  </script>
+
+  <script src="cimbar_js.js"></script>
+
+</body>
+
+</html>

@@ -64,11 +64,12 @@ var RecvWorker = function () {
 
       // then decode in wasm, fool
       const fountainBuff = RecvWorker.fountainBuff();
+      const t0 = performance.now();
       var len = Module._cimbard_scan_extract_decode(RecvWorker.imgBuff().byteOffset, width, height, type, fountainBuff.byteOffset, fountainBuff.length);
       if (len <= 0) {
         var errmsg = RecvWorker.get_error();
         errmsg = len + " " + errmsg;
-        let msg = { res: errmsg };
+        let msg = { res: errmsg, ms: performance.now() - t0 };
         if (len == 0)
           msg.nodata = true;
         else if (len == -3)
@@ -78,10 +79,8 @@ var RecvWorker = function () {
         self.postMessage(msg);
       }
       else { //if (len > 0) {
-        console.log('len is ' + len);
         const msgbuf = new Uint8Array(Module.HEAPU8.buffer, fountainBuff.byteOffset, len).slice();
-        //console.log(msgbuf);
-        self.postMessage({ mode: mode, buff: msgbuf }, [msgbuf.buffer]);
+        self.postMessage({ mode: mode, buff: msgbuf, ms: performance.now() - t0 }, [msgbuf.buffer]);
       }
       // in main, const receivedArray = event.data.buff;
     },

@@ -99,6 +99,7 @@ var Main = function () {
       var height = window.innerHeight - 10;
       Main.scaleCanvas(canvas, width, height);
       Main.checkNavButtonOverlap();
+      Main.checkStatusOverlap();
     },
 
     toggleFullscreen: function () {
@@ -286,6 +287,7 @@ var Main = function () {
       if (!val) {
         return;
       }
+      document.getElementById('fps-val').textContent = val;
       if (_ww) {
         _ww.postMessage({ fun: 'setFPS', args: [val] });
       }
@@ -296,6 +298,19 @@ var Main = function () {
 
     setHTML: function (id, msg) {
       document.getElementById(id).innerHTML = msg;
+      if (id == "status") {
+        Main.checkStatusOverlap();
+      }
+    },
+
+    // 状态文字一旦盖住条码就会影响识别，此时隐藏它（例如窗口接近正方形时）
+    checkStatusOverlap: function () {
+      var status = document.getElementById("status");
+      status.style.visibility = "hidden";
+      var a = status.getBoundingClientRect();
+      var b = document.getElementById('canvas').getBoundingClientRect();
+      var overlap = a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+      status.style.visibility = overlap ? "hidden" : "visible";
     },
 
     setTitle: function (msg) {

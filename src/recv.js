@@ -121,6 +121,15 @@ var Recv = function () {
   var _wasmReady = false;
   var _visualState = "";
 
+  // 速度统计
+  var _statsTimer = undefined;
+  var _payloadSamples = [];   // [时间, 字节数]，只记不重复的帧
+  var _seenPackets = new Map(); // 同一发送帧可能被捕获、解码多次，按内容去重
+  var _decodeTimes = [];      // 成功解码的时间点（含重复帧）
+  var _progressHist = [];     // [时间, 进度 0~1]
+  var _transferStart = 0;
+  var _transferBytes = 0;
+
   var _workers = [];
   var _nextWorker = 0;
   var _workerReady;
@@ -221,6 +230,29 @@ var Recv = function () {
     return (n / 1024 / 1024 / 1024).toFixed(2) + " GB";
   }
 
+  function _formatRate(bytesPerSec) {
+    if (bytesPerSec >= 1024 * 1024) return (bytesPerSec / 1024 / 1024).toFixed(2) + " MB/s";
+    return (bytesPerSec / 1024).toFixed(1) + " KB/s";
+  }
+
+  function _formatDuration(sec) {
+    sec = Math.max(0, Math.round(sec));
+    if (sec < 60) return sec + " 秒";
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    if (m < 60) return m + " 分 " + s + " 秒";
+    return Math.floor(m / 60) + " 小时 " + (m % 60) + " 分";
+  }
+
+  function _resetStats() {
+    _payloadSamples = [];
+    _seenPackets.clear();
+    _decodeTimes = [];
+    _progressHist = [];
+    _transferStart = 0;
+    _transferBytes = 0;
+  }
+
   // getUserMedia / getDisplayMedia 的错误 -> 中文说明
   function _describeMediaError(err, source) {
     const what = source == 'screen' ? '屏幕捕获' : '摄像头';
@@ -250,7 +282,7 @@ var Recv = function () {
       const constraints = {
         video: {
           cursor: "never",           // 旧写法，部分浏览器仍识别
-          frameRate: { ideal: 30, max: 30 },
+          frameRate: { ideal: 60, max: 60 }, // 采样率要明显高于发送帧率，才不容易漏帧
           width: { ideal: 3840 },
           height: { ideal: 2160 },
           displaySurface: "window",  // 弹窗里优先展示“窗口”标签页
@@ -464,6 +496,11 @@ var Recv = function () {
       _watchmanLastSeen = 1;
       _visualState = "";
       Sink.reset_completed();
+      _resetStats();
+      Recv.update_stats();
+      if (!_statsTimer) {
+        _statsTimer = setInterval(Recv.update_stats, 500);
+      }
 
       document.getElementById('picker').classList.add('hidden');
       document.body.classList.add('running', source == 'screen' ? 'source-screen' : 'source-camera');
@@ -598,10 +635,11 @@ var Recv = function () {
       _recentDecode = _counter;
 
       const buff = data.buff;
+      Recv.record_payload(buff);
       if (buff.length > 0) {
         Recv.setMode(data.mode); // call *before* we send it to the sink. This is our autodetect confirm.
       }
-      Recv.set_HTML("t" + wid, "mode is " + _mode + ", len() is " + buff.length);
+      Recv.set_HTML("t" + wid, "mode is " + _mode + ", len() is " + buff.length + ", " + Math.round(data.ms) + "ms");
       Sink.on_decode(buff);
     },
 
@@ -801,13 +839,20 @@ var Recv = function () {
       }
 
       if (report.length > 0) {
-        const pct = Math.floor(Math.max.apply(null, report) * 100);
-        Recv.set_HTML("status-progress", pct + "%");
+        const p = Math.max.apply(null, report);
+        _progressHist.push([performance.now(), p]);
+        Recv.set_HTML("status-progress", Math.floor(p * 100) + "%");
       }
     },
 
     on_file_received: function (filename, blob) {
       Recv.set_HTML("status-progress", "");
+      let summary = "";
+      if (_transferStart) {
+        const sec = (performance.now() - _transferStart) / 1000;
+        summary = "用时 " + _formatDuration(sec) + "，平均 " + _formatRate(blob.size / Math.max(sec, 0.001));
+      }
+      _resetStats();
       const list = document.getElementById('received-list');
       const li = document.createElement('li');
       const a = document.createElement('a');
@@ -815,12 +860,68 @@ var Recv = function () {
       a.download = filename;
       a.textContent = filename;
       const meta = document.createElement('span');
-      meta.textContent = " （" + _formatSize(blob.size) + "，" + new Date().toLocaleTimeString() + "）";
+      meta.textContent = " （" + _formatSize(blob.size) + (summary ? "，" + summary : "") + "，" + new Date().toLocaleTimeString() + "）";
       li.appendChild(a);
       li.appendChild(meta);
       list.insertBefore(li, list.firstChild);
       document.getElementById('received').classList.remove('hidden');
-      Recv.toast("✅ 接收完成：" + filename + "（" + _formatSize(blob.size) + "），已开始下载", "ok");
+      Recv.toast("✅ 接收完成：" + filename + "（" + _formatSize(blob.size) + (summary ? "，" + summary : "") + "），已开始下载", "ok");
+    },
+
+    record_payload: function (buff) {
+      const now = performance.now();
+      _decodeTimes.push(now);
+      let key = buff.length + ":";
+      for (let i = 0; i < Math.min(48, buff.length); i++) {
+        key += buff[i].toString(16) + ",";
+      }
+      if (_seenPackets.has(key)) {
+        return; // 同一发送帧的重复解码，不计入速度
+      }
+      _seenPackets.set(key, now);
+      if (!_transferStart) {
+        _transferStart = now;
+      }
+      _transferBytes += buff.length;
+      _payloadSamples.push([now, buff.length]);
+    },
+
+    // 每 0.5 秒刷新一次：实时速度（3 秒滑动窗口）、剩余时间、解码帧率
+    update_stats: function () {
+      const now = performance.now();
+      const win = 3000;
+      while (_payloadSamples.length && _payloadSamples[0][0] < now - win) _payloadSamples.shift();
+      while (_decodeTimes.length && _decodeTimes[0] < now - win) _decodeTimes.shift();
+      while (_progressHist.length && _progressHist[0][0] < now - 5000) _progressHist.shift();
+      for (const [k, t] of _seenPackets) {
+        if (t < now - 10000) _seenPackets.delete(k);
+        else break; // Map 按插入顺序遍历，后面的更新
+      }
+
+      if (!_payloadSamples.length) {
+        Recv.set_HTML("status-speed", "");
+        Recv.set_HTML("tstats", "");
+        return;
+      }
+
+      const span = Math.max(500, Math.min(win, now - _transferStart));
+      let bytes = 0;
+      for (const s of _payloadSamples) bytes += s[1];
+      const rate = bytes * 1000 / span;
+      const uniqueFps = _payloadSamples.length * 1000 / span;
+      const decodeFps = _decodeTimes.length * 1000 / span;
+
+      let text = " · " + _formatRate(rate);
+      if (_progressHist.length >= 2) {
+        const a = _progressHist[0];
+        const b = _progressHist[_progressHist.length - 1];
+        const pps = (b[1] - a[1]) * 1000 / Math.max(1, b[0] - a[0]);
+        if (pps > 0 && b[1] < 1) {
+          text += " · 剩余约 " + _formatDuration((1 - b[1]) / pps);
+        }
+      }
+      Recv.set_HTML("status-speed", text);
+      Recv.set_HTML("tstats", "有效 " + uniqueFps.toFixed(1) + " 帧/秒（解码成功 " + decodeFps.toFixed(1) + " 帧/秒，含重复），已收 " + _formatSize(_transferBytes));
     },
 
     toast: function (msg, kind) {

@@ -36,6 +36,17 @@
       position: fixed;
       right: 0;
       top: 0;
+      z-index: 3;
+      padding: 4px 8px;
+      font: 12px/1.5 "Microsoft YaHei", sans-serif;
+      color: #ccc;
+      background: rgba(0, 0, 0, .55);
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    #status:empty {
+      display: none;
     }
 
     #nav-container {
@@ -364,6 +375,12 @@
       width: 2.4em;
     }
 
+    .fps-hint {
+      color: #888;
+      font-size: .85em;
+      margin-top: .3em;
+    }
+
     #current-file {
       color: #ccc;
       display: block;
@@ -460,9 +477,10 @@
           <a class="mode-4c" href="javascript:void(0)" onclick="Main.setMode('4C')">4C</a>
         </li>
         <li>
-          <h4>帧率（屏幕捕获建议 10~15）</h4>
-          <input type="range" class="range" min="5" max="20" step="5" value="15" oninput="Main.setFPS(this.value)"
+          <h4>帧率：<span id="fps-val">15</span> 帧/秒</h4>
+          <input type="range" class="range" min="5" max="30" step="5" value="15" oninput="Main.setFPS(this.value)"
             onchange="Main.setFPS(this.value)" />
+          <div class="fps-hint">屏幕捕获通常可用 20~30；识别不稳就调低</div>
         </li>
         <li class="small"><a href="javascript:void(0)" onclick="Main.toggleFullscreen()">全屏</a></li>
         <li class="small"><a href="https://github.com/sz3/libcimbar" target="_blank">基于 libcimbar</a></li>

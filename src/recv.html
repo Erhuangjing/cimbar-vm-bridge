@@ -527,7 +527,8 @@
       right: 12px;
       z-index: 3;
       padding: 6px 14px;
-      border-radius: 999px;
+      border-radius: 14px;
+      text-align: right;
       background: rgba(0, 0, 0, .7);
       color: #ddd;
       font-size: 14px;
@@ -549,6 +550,19 @@
 
     #status-pill.active::before {
       color: #2ee66b;
+    }
+
+    #status-speed {
+      color: #9fdcff;
+    }
+
+    #tstats {
+      font-size: 12px;
+      color: #9aa5b4;
+    }
+
+    #tstats:empty {
+      display: none;
     }
 
     #status-progress {
@@ -681,7 +695,9 @@
     </div>
   </div>
 
-  <div id="status-pill" class="pill"><span id="status-text">等待画面</span><span id="status-progress"></span></div>
+  <div id="status-pill" class="pill"><span id="status-text">等待画面</span><span id="status-progress"></span><span id="status-speed"></span>
+    <div id="tstats"></div>
+  </div>
   <div id="toasts"></div>
   <div id="received" class="hidden">
     <div>已接收的文件（点击可再次下载）：</div>
@@ -757,7 +773,7 @@
       }
     };
     if (typeof WebAssembly !== 'undefined') {
-      Recv.init(video, Math.max(2, Math.min(4, (navigator.hardwareConcurrency || 4) - 1)));
+      Recv.init(video, Math.max(2, Math.min(6, (navigator.hardwareConcurrency || 4) - 1)));
     }
     Recv.update_source_buttons();
   </script>

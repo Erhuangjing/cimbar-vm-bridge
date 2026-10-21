@@ -14,6 +14,13 @@ var Send = function () {
   var _counter = 0;
   var _renderTime = 0;
 
+  // 实际发送帧率统计（虚拟机里软件渲染可能达不到设定值）
+  var _fpsWindowStart = 0;
+  var _fpsWindowFrames = 0;
+  // 各模式每帧的有效载荷（字节），用于估算发送速度
+  var _bytesPerFrame = { 4: 7500, 66: 3240, 67: 5148, 68: 7500 };
+  var _modeVal = 68;
+
   var _lastFrame = 0; // used with _interval
   var _wakeLock = undefined;
 
@@ -133,10 +140,12 @@ var Send = function () {
       //console.log("in nextFrame, is it happening?");
       window.requestAnimationFrame(Send.nextFrame);
       let elapsed = timestamp - _lastFrame;
-      if (!timestamp || elapsed < _interval) {
+      // 留半帧（约 8ms）容差，并按平均间隔累计，
+      // 这样 60Hz 屏幕上 25 帧/秒之类的设定也能达到平均值，而不是被量化成 20
+      if (!timestamp || elapsed < _interval - 8) {
         return;
       }
-      _lastFrame = timestamp;
+      _lastFrame = elapsed > 2 * _interval ? timestamp : _lastFrame + _interval;
 
       _counter += 1;
       if (_pause > 0) {
@@ -145,6 +154,10 @@ var Send = function () {
       if (!Send.isPaused()) {
         Module._cimbare_render();
         var frameCount = Module._cimbare_next_frame(_colorBalance);
+      }
+
+      if (frameCount && !Send.isPaused()) {
+        Send.update_fps(timestamp);
       }
 
       if (_showStats && frameCount) {
@@ -159,8 +172,30 @@ var Send = function () {
 
     setMode: function (mode_val) {
       // call resize after this from Main?
+      _modeVal = mode_val;
       Module._cimbare_configure(mode_val, -1);
       Report.setAspectRatio(Module._cimbare_get_aspect_ratio());
+    },
+
+    update_fps: function (timestamp) {
+      _fpsWindowFrames += 1;
+      if (!_fpsWindowStart) {
+        _fpsWindowStart = timestamp;
+        return;
+      }
+      const span = timestamp - _fpsWindowStart;
+      if (span < 2000) {
+        return;
+      }
+      const actual = (_fpsWindowFrames - 1) * 1000 / span;
+      const target = 1000 / _interval;
+      let msg = actual.toFixed(1) + " / " + Math.round(target) + " 帧/秒<br>约 " + Math.round(actual * (_bytesPerFrame[_modeVal] || 7500) / 1024) + " KB/s";
+      if (actual < target * 0.85) {
+        msg += "<br>⚠️ 渲染跟不上";
+      }
+      Report.setHTML("status", msg);
+      _fpsWindowStart = timestamp;
+      _fpsWindowFrames = 1;
     },
 
     setFPS: function (val) {

@@ -1,9 +1,14 @@
 name: release
 
-# 推送 v* 标签时自动打包并发布 Release，例如：
-#   git tag v1.0.1 && git push origin v1.0.1
+# 两种触发方式（任选其一）：
+#   1. 修改仓库根目录的 RELEASE_VERSION（例如改成 v1.0.1）并推送到 main，工作流会自动建标签并发布
+#   2. 推送 v* 标签：git tag v1.0.1 && git push origin v1.0.1
 on:
   push:
+    branches:
+      - main
+    paths:
+      - RELEASE_VERSION
     tags:
       - 'v*'
   workflow_dispatch:
@@ -18,12 +23,21 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG }}
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: 确定版本号
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG=$(tr -d ' \r\n' < RELEASE_VERSION)
+          fi
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
 
       - name: 校验 vendor 文件
         run: cd vendor && sha256sum -c SHA256SUMS
@@ -40,5 +54,5 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" $FILES --clobber
           else
-            gh release create "$TAG" $FILES --title "$TAG" --notes-file ../.github/release-notes.md
+            gh release create "$TAG" $FILES --title "$TAG" --target "$GITHUB_SHA" --notes-file ../.github/release-notes.md
           fi

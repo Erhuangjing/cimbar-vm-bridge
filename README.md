@@ -106,11 +106,9 @@ LANG=C.UTF-8 node test/e2e.js 300000        # 端到端测试：发送 300KB 随
 
 ### 发布新版本
 
-推送 `v*` 标签后，GitHub Actions（`.github/workflows/release.yml`）会自动打包，并把 zip 和两个 HTML 上传到 Release：
+把仓库根目录 `RELEASE_VERSION` 的内容改成新版本号（例如 `v1.0.1`）并推送到 `main`。GitHub Actions（`.github/workflows/release.yml`）会自动打标签、打包，并把 zip 和两个 HTML 上传到 Release。
 
-```bash
-git tag v1.0.1 && git push origin v1.0.1
-```
+直接推送 `v*` 标签也会触发同样的流程：`git tag v1.0.1 && git push origin v1.0.1`。
 
 ### 实现要点
 

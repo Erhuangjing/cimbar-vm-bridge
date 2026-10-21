@@ -14,7 +14,7 @@
 
 ## 快速开始
 
-需要的文件都在 [`dist/`](dist/) 目录：
+到 [Releases](https://github.com/Erhuangjing/cimbar-vm-bridge/releases/latest) 下载 `cimbar-vm-bridge-*.zip`，解压后包含以下文件。也可以只单独下载两个 HTML。
 
 | 文件 | 在哪儿用 | 说明 |
 | --- | --- | --- |
@@ -30,14 +30,14 @@
 
 ### 方式 B：宿主机开服务器，虚拟机用浏览器访问
 
-1. 在 Win11 上双击 `dist/启动服务器.bat`。窗口里会列出本机所有 IP；如果弹出 Windows 防火墙提示，允许“专用网络”。
+1. 在 Win11 上双击解压目录里的 `启动服务器.bat`。窗口里会列出本机所有 IP；如果弹出 Windows 防火墙提示，允许“专用网络”。
 2. 在 Win7 虚拟机浏览器里打开 `http://<宿主机IP>:8000/cimbar-send.html`：
    - VMware NAT / 仅主机模式：一般使用 `VMnet8` / `VMnet1` 网卡的 IP。
    - VirtualBox NAT 模式：使用 `http://10.0.2.2:8000/`。
    - 打开后可以按 `Ctrl+S` 把页面保存到虚拟机本地，以后离线也能用。
 3. 在 Win11 上打开 `http://localhost:8000/cimbar-recv.html`。注意要用 **localhost**，不要用局域网 IP，原因见下文。
 
-> 也可以用 Python：在 `dist/` 目录执行 `python -m http.server 8000`。
+> 也可以用 Python：在解压目录执行 `python -m http.server 8000`。
 
 ### 传输步骤
 
@@ -90,18 +90,27 @@ src/            页面源码（基于 libcimbar web/ 修改）
   send.html     发送端页面        main.js / send.js
   recv.html     接收端页面        recv.js / recv-worker.js / zstd.js
   env.js        环境检测 + 内嵌 WASM 加载（两个页面共用）
+  serve.ps1 / 启动服务器.bat  零依赖本地服务器（原样复制到发布包）
 vendor/         libcimbar 官方 release 的 cimbar_js.js / cimbar_js.wasm（v0.6.8）
-tools/build.py  打包成 dist/ 下的单文件 HTML（只用到 Python 标准库）
+tools/build.py  打包成 dist/ 下的单文件 HTML 和发布用 zip（只用到 Python 标准库）
 tools/fetch_vendor.sh  重新下载 vendor/ 下的文件
 test/e2e.js     端到端测试（Playwright）
 ```
 
 ```bash
-python3 tools/build.py                      # 重新生成 dist/
+python3 tools/build.py [版本号]             # 生成 dist/（不提交到仓库）
 LANG=C.UTF-8 node test/e2e.js 300000        # 端到端测试：发送 300KB 随机文件（中文文件名），校验接收结果逐字节一致
 ```
 
 端到端测试流程：用无头 Chromium 打开发送端编码文件，连续截图，再通过 `canvas.captureStream()` 伪造一个 `getDisplayMedia` 流喂给接收端，最后比对下载下来的文件和原文件。
+
+### 发布新版本
+
+推送 `v*` 标签后，GitHub Actions（`.github/workflows/release.yml`）会自动打包，并把 zip 和两个 HTML 上传到 Release：
+
+```bash
+git tag v1.0.1 && git push origin v1.0.1
+```
 
 ### 实现要点
 

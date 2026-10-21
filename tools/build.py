@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """把 src/ 下的页面打包成可以直接双击打开的单文件 HTML（WASM 以 base64 内嵌）。
 
-用法：python3 tools/build.py
-输出：dist/cimbar-send.html  dist/cimbar-recv.html  dist/index.html
+用法：python3 tools/build.py [版本号]
+输出：dist/ 目录（cimbar-send.html、cimbar-recv.html、index.html、本地服务器脚本）
+      以及 dist/cimbar-vm-bridge-<版本号>.zip（发布到 GitHub Release 用）
 """
 import base64
 import datetime
 import os
 import re
 import shutil
+import sys
+import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'src')
@@ -19,6 +22,9 @@ PAGES = {
     'send.html': 'cimbar-send.html',
     'recv.html': 'cimbar-recv.html',
 }
+
+# 原样复制到 dist/ 的文件
+EXTRA_FILES = ['index.html', 'favicon.ico', 'serve.ps1', '启动服务器.bat']
 
 SCRIPT_RE = re.compile(r'<script([^>]*?)\s+src="([^"]+)"([^>]*)>\s*</script>')
 
@@ -78,11 +84,19 @@ def main():
         upstream = f.read().strip()
     epoch = int(os.environ.get('SOURCE_DATE_EPOCH', '0')) or None
     date = datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc) if epoch else datetime.datetime.now(datetime.timezone.utc)
-    version = 'cimbar-vm-bridge %s (libcimbar %s)' % (date.strftime('%Y-%m-%d'), upstream)
+    release = sys.argv[1] if len(sys.argv) > 1 else date.strftime('%Y-%m-%d')
+    version = 'cimbar-vm-bridge %s (libcimbar %s)' % (release, upstream)
     for src_name, out_name in PAGES.items():
         build_page(src_name, out_name, version)
-    for name in ('index.html', 'favicon.ico'):
+    for name in EXTRA_FILES:
         shutil.copyfile(os.path.join(SRC, name), os.path.join(DIST, name))
+
+    files = list(PAGES.values()) + EXTRA_FILES
+    zip_path = os.path.join(DIST, 'cimbar-vm-bridge-%s.zip' % release)
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as z:
+        for name in files:
+            z.write(os.path.join(DIST, name), 'cimbar-vm-bridge/' + name)
+    print('zip -> %s (%.1f MB)' % (zip_path, os.path.getsize(zip_path) / 1024 / 1024))
 
 
 if __name__ == '__main__':
